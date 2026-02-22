@@ -1,0 +1,200 @@
+local Players = game:GetService('Players')
+local RunService = game:GetService('RunService')
+local UserInputService = game:GetService('UserInputService')
+local CurrentCamera = workspace.CurrentCamera
+local LocalPlayer = Players.LocalPlayer
+
+--// Config
+local Config = {
+    -- Master Toggles
+    MasterLock = false,
+    MasterSpeed = false,
+
+    -- State
+    LockActive = false,
+    SpeedActive = false,
+
+    -- Keybinds
+    MouseLockKey = Enum.KeyCode.X,
+    WalkSpeedKey = Enum.KeyCode.J,
+    ToggleGUIKey = Enum.KeyCode.Insert,
+    
+    -- Activation Settings
+    UseRightClick = false, 
+    ActivationType = "Toggle", 
+    
+    -- Parameters
+    Smoothness = 0.71,
+    Prediction = 0.250,
+    LeftOffset = 2.34,
+    UpOffset = -10.53,
+    HitPart = 'HumanoidRootPart',
+    WalkSpeedValue = 100,
+}
+
+--// GUI Setup
+local ImGui = loadstring(game:HttpGet('https://github.com/depthso/Roblox-ImGUI/raw/main/ImGui.lua'))()
+
+local Window = ImGui:CreateWindow({
+    Title = 'T5INTED FLAMELOCK XOXO',
+    Size = UDim2.fromOffset(400, 480),
+    Position = UDim2.fromScale(0.5, 0.2),
+})
+
+--// Main Flamelock Tab
+local MouseTab = Window:CreateTab({ Name = 'flamelock' })
+
+MouseTab:Checkbox({
+    Label = 'Enable Flamelock Master ✨',
+    Value = Config.MasterLock,
+    Callback = function(_, v) 
+        Config.MasterLock = v 
+        Config.LockActive = false 
+    end,
+})
+
+MouseTab:Checkbox({
+    Label = 'Use Right Mouse Button 🖱️',
+    Value = Config.UseRightClick,
+    Callback = function(_, v) Config.UseRightClick = v end,
+})
+
+MouseTab:Combo({
+    Label = 'Activation Type',
+    Items = {"Toggle", "Hold"},
+    Value = Config.ActivationType,
+    Callback = function(_, v) 
+        Config.ActivationType = v 
+        Config.LockActive = false 
+    end,
+})
+
+MouseTab:Slider({
+    Label = 'Smoothness', MinValue = 0, MaxValue = 1,
+    Value = Config.Smoothness, Callback = function(_, v) Config.Smoothness = v end,
+})
+
+--// Movement Tab
+local MoveTab = Window:CreateTab({ Name = 'movement' })
+MoveTab:Checkbox({
+    Label = 'Enable Speed Master 🏃‍♀️',
+    Value = Config.MasterSpeed,
+    Callback = function(_, v) 
+        Config.MasterSpeed = v 
+        Config.SpeedActive = false 
+    end,
+})
+MoveTab:Slider({
+    Label = 'Speed Value', MinValue = 16, MaxValue = 500,
+    Value = Config.WalkSpeedValue, Callback = function(_, v) Config.WalkSpeedValue = v end,
+})
+
+--// Settings Tab
+local SettingsTab = Window:CreateTab({ Name = 'settings' })
+
+SettingsTab:Label({ Text = "— Keybinds —" })
+
+SettingsTab:Keybind({
+    Label = 'Flamelock Key',
+    Value = Config.MouseLockKey,
+    Callback = function(_, v) Config.MouseLockKey = v end,
+})
+
+SettingsTab:Keybind({
+    Label = 'Speed Toggle Key',
+    Value = Config.WalkSpeedKey,
+    Callback = function(_, v) Config.WalkSpeedKey = v end,
+})
+
+SettingsTab:Keybind({
+    Label = 'Hide UI Key',
+    Value = Config.ToggleGUIKey,
+    Callback = function(_, v) Config.ToggleGUIKey = v end,
+})
+
+--// Target Logic
+local target = nil
+local function getClosestTarget()
+    local closest, shortest = nil, math.huge
+    local mousePos = UserInputService:GetMouseLocation()
+    for _, plr in pairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild(Config.HitPart) then
+            local part = plr.Character[Config.HitPart]
+            local screenPos, onScreen = CurrentCamera:WorldToViewportPoint(part.Position)
+            if onScreen then
+                local dist = (Vector2.new(mousePos.X, mousePos.Y) - Vector2.new(screenPos.X, screenPos.Y)).Magnitude
+                if dist < shortest then
+                    closest = part
+                    shortest = dist
+                end
+            end
+        end
+    end
+    return closest
+end
+
+--// Input Handling
+local function handleActivation(isInputBegin)
+    if not Config.MasterLock then return end
+
+    if Config.ActivationType == "Toggle" then
+        if isInputBegin then
+            Config.LockActive = not Config.LockActive
+            target = Config.LockActive and getClosestTarget() or nil
+        end
+    elseif Config.ActivationType == "Hold" then
+        Config.LockActive = isInputBegin
+        target = isInputBegin and getClosestTarget() or nil
+    end
+end
+
+UserInputService.InputBegan:Connect(function(input, processed)
+    if processed then return end
+    
+    local isMouse = (input.UserInputType == Enum.UserInputType.MouseButton2 and Config.UseRightClick)
+    local isKey = (input.KeyCode == Config.MouseLockKey and not Config.UseRightClick)
+
+    if isMouse or isKey then
+        handleActivation(true)
+    elseif input.KeyCode == Config.WalkSpeedKey and Config.MasterSpeed then
+        Config.SpeedActive = not Config.SpeedActive
+    elseif input.KeyCode == Config.ToggleGUIKey then
+        Window:SetVisible(not Window.Visible)
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    local isMouse = (input.UserInputType == Enum.UserInputType.MouseButton2 and Config.UseRightClick)
+    local isKey = (input.KeyCode == Config.MouseLockKey and not Config.UseRightClick)
+
+    if (isMouse or isKey) and Config.ActivationType == "Hold" then
+        handleActivation(false)
+    end
+end)
+
+--// Main Loop
+RunService.RenderStepped:Connect(function()
+    if Config.MasterLock and Config.LockActive and target and target.Parent then
+        local targetPos = target.Position + (target.Velocity * Config.Prediction)
+        local camRight = CurrentCamera.CFrame.RightVector
+        local offsetVec = (camRight * Config.LeftOffset) + Vector3.new(0, Config.UpOffset, 0)
+        local finalPos = targetPos + offsetVec
+        local finalScreenPos, onScreen = CurrentCamera:WorldToViewportPoint(finalPos)
+
+        if onScreen then
+            local mousePos = UserInputService:GetMouseLocation()
+            pcall(function()
+                mousemoverel(
+                    (finalScreenPos.X - mousePos.X) * Config.Smoothness,
+                    (finalScreenPos.Y - mousePos.Y) * Config.Smoothness
+                )
+            end)
+        end
+    end
+
+    if Config.MasterSpeed and Config.SpeedActive then
+        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+            LocalPlayer.Character.Humanoid.WalkSpeed = Config.WalkSpeedValue
+        end
+    end
+end)
